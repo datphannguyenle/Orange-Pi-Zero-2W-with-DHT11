@@ -1,23 +1,52 @@
 import wiringpi
 from wiringpi import GPIO
-import paho.mqtt.client as mqtt
 
-class DHT11:
-    def __init__(self, pin):
-        self.pin = pin
-        wiringpi.wiringPiSetup()
+pin = 6
+
+def getval(pin):
+    tl = []
+    tb = []
+    wiringpi.wiringPiSetup()
+    wiringpi.pinMode(pin, GPIO.OUTPUT)
+    wiringpi.digitalWrite(pin, GPIO.HIGH)
+    wiringpi.delay(1)
+    wiringpi.digitalWrite(pin, GPIO.LOW)
+    wiringpi.delay(25)
+    wiringpi.digitalWrite(pin, GPIO.HIGH)
+    wiringpi.delayMicroseconds(20)
+    wiringpi.pinMode(pin, GPIO.INPUT)
+    while(wiringpi.digitalRead(pin) == 1): 
+        pass
     
-    def send_to_mqtt(self, sh, sl, th, tl):
-        client = mqtt.Client()
-        client.connect("192.168.1.218", 1883, 60)
-        payload = f"SH={sh}, SL={sl}, TH={th}, TL={tl}"
-        client.publish("dht", payload)
-        client.disconnect()
+    for i in range(45):
+        tc = wiringpi.micros()
+        while(wiringpi.digitalRead(pin) == 0): 
+            pass
+        while(wiringpi.digitalRead(pin) == 1):
+            if wiringpi.micros() - tc > 500:
+                break
+        if wiringpi.micros() - tc > 500:
+            break
+        tl.append(wiringpi.micros() - tc)
+
+    tl = tl[1:]
+    for i in tl:
+        if i > 100:
+            tb.append(1)
+        else:
+            tb.append(0)
     
-    def get_result(self):
-        SH = SL = TH = TL = C = 0
-        result = [0] * 40  # Dummy data for demonstration
-        # Your existing code to read data from DHT11 sensor
+    return tb
+
+def GetResult(pin):
+    for i in range(10):
+        SH = 0
+        SL = 0
+        TH = 0
+        TL = 0
+        C = 0
+        result = getval(pin)
+
         if len(result) == 40:
             for i in range(8):
                 SH *= 2; SH += result[i]    # humi Integer
@@ -26,17 +55,15 @@ class DHT11:
                 TL *= 2; TL += result[i+24] # temp decimal
                 C *= 2; C += result[i+32]   # Checksum
             if ((SH + SL + TH + TL) % 256) == C and C != 0:
-                print("Read Success")
+                break
             else:
                 print("Read Success, But checksum error! retrying")
+
         else:
             print("Read failer! Retrying")
-        
+            break
         wiringpi.delay(200)
-        return SH, SL, TH, TL
+    return SH, SL, TH, TL
 
-# Example usage
-dht11_sensor = DHT11(pin=6)
-SH, SL, TH, TL = dht11_sensor.get_result()
+SH, SL, TH, TL = GetResult(pin)
 print("humi:", SH, SL, "temp:", TH, TL)
-dht11_sensor.send_to_mqtt(SH, SL, TH, TL)
